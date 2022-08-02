@@ -129,9 +129,7 @@ class SliceTypePrinter:
 
 	def to_string(self):
 		t = str(self.val.type)
-		if (t.startswith("struct ")):
-			return t[len("struct "):]
-		return t
+		return t[len("struct "):] if (t.startswith("struct ")) else t
 
 	def children(self):
 		sval = SliceValue(self.val)
@@ -289,11 +287,11 @@ def lookup_type(name):
 	except gdb.error:
 		pass
 	try:
-		return gdb.lookup_type('struct ' + name)
+		return gdb.lookup_type(f'struct {name}')
 	except gdb.error:
 		pass
 	try:
-		return gdb.lookup_type('struct ' + name[1:]).pointer()
+		return gdb.lookup_type(f'struct {name[1:]}').pointer()
 	except gdb.error:
 		pass
 
@@ -482,7 +480,7 @@ def find_goroutine(goid):
 	pc, sp = ptr['sched']['pc'], ptr['sched']['sp']
 	status = ptr['atomicstatus']&~G_SCAN
 	# Goroutine is not running nor in syscall, so use the info in goroutine
-	if status != G_RUNNING and status != G_SYSCALL:
+	if status not in [G_RUNNING, G_SYSCALL]:
 		return pc.cast(vp), sp.cast(vp)
 
 	# If the goroutine is in a syscall, use syscallpc/sp.
@@ -534,8 +532,11 @@ class GoroutineCmd(gdb.Command):
 		goids = []
 
 		if goid_str == 'all':
-			for ptr in SliceValue(gdb.parse_and_eval("'runtime.allgs'")):
-				goids.append(int(ptr['goid']))
+			goids.extend(
+				int(ptr['goid'])
+				for ptr in SliceValue(gdb.parse_and_eval("'runtime.allgs'"))
+			)
+
 		else:
 			goids = [int(gdb.parse_and_eval(goid_str))]
 
@@ -582,11 +583,7 @@ class GoIfaceCmd(gdb.Command):
 				print("Can't parse ", obj, ": ", e)
 				continue
 
-			if obj['data'] == 0:
-				dtype = "nil"
-			else:
-				dtype = iface_dtype(obj)
-
+			dtype = "nil" if obj['data'] == 0 else iface_dtype(obj)
 			if dtype is None:
 				print("Not an interface: ", obj.type)
 				continue
